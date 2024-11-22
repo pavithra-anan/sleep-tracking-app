@@ -1,0 +1,124 @@
+flutter create sleep_tracking_app
+cd sleep_tracking_app
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: ^2.14.0
+  google_fit: ^0.6.0
+  health: ^3.2.0
+  flutter_local_notifications: ^9.1.4
+import 'package:google_fit/google_fit.dart';
+
+Future<void> fetchSleepData() async {
+  try {
+    // Initialize Google Fit
+    await GoogleFit.requestPermissions();
+
+    // Fetch sleep data from Google Fit
+    List<SleepSession> sleepSessions = await GoogleFit.getSleepSessions();
+    
+    // Print or store sleep data
+    for (var session in sleepSessions) {
+      print('Sleep Start Time: ${session.startTime}');
+      print('Sleep End Time: ${session.endTime}');
+      print('Sleep Duration: ${session.duration}');
+    }
+  } catch (e) {
+    print("Error fetching sleep data: $e");
+  }
+}
+double calculateSleepQuality(List<SleepSession> sleepSessions) {
+  int totalSleepTime = 0;
+  int deepSleepTime = 0;
+  int remSleepTime = 0;
+  int lightSleepTime = 0;
+
+  for (var session in sleepSessions) {
+    totalSleepTime += session.duration;
+    deepSleepTime += session.deepSleepDuration;
+    remSleepTime += session.remSleepDuration;
+    lightSleepTime += session.lightSleepDuration;
+  }
+
+  double qualityScore = (deepSleepTime + remSleepTime) / totalSleepTime;
+  return qualityScore * 100; // Return sleep quality percentage
+}
+import 'package:flutter/material.dart';
+import 'package:charts_flutter/flutter.dart' as charts;
+
+class SleepTrendsChart extends StatelessWidget {
+  final List<charts.Series> seriesList;
+  final bool animate;
+
+  SleepTrendsChart(this.seriesList, {this.animate = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return charts.TimeSeriesChart(
+      seriesList,
+      animate: animate,
+      dateTimeFactory: charts.LocalDateTimeFactory(),
+    );
+  }
+
+  static List<charts.Series<SleepData, DateTime>> createSampleData() {
+    final data = [
+      SleepData(DateTime(2024, 11, 20), 80),
+      SleepData(DateTime(2024, 11, 21), 85),
+      SleepData(DateTime(2024, 11, 22), 90),
+    ];
+
+    return [
+      charts.Series<SleepData, DateTime>(
+        id: 'SleepQuality',
+        colorFn: (_, __) => charts.MaterialPalette.blue.shadeDefault,
+        domainFn: (SleepData sleep, _) => sleep.date,
+        measureFn: (SleepData sleep, _) => sleep.sleepQuality,
+        data: data,
+      )
+    ];
+  }
+}
+
+class SleepData {
+  final DateTime date;
+  final int sleepQuality;
+
+  SleepData(this.date, this.sleepQuality);
+}
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+Future<void> scheduleSleepReminder() async {
+  var scheduledTime = DateTime.now().add(Duration(hours: 6)); // 6 hours from now
+
+  var androidDetails = AndroidNotificationDetails(
+    'sleep_channel_id', 
+    'Sleep Reminders', 
+    'Daily sleep reminders',
+    importance: Importance.high,
+  );
+
+  var generalNotificationDetails = NotificationDetails(android: androidDetails);
+
+  await flutterLocalNotificationsPlugin.schedule(
+    0,
+    'Sleep Reminder',
+    'Time to get ready for bed!',
+    scheduledTime,
+    generalNotificationDetails,
+  );
+}
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+Future<void> storeSleepData(SleepSession session) async {
+  CollectionReference sleepData = FirebaseFirestore.instance.collection('sleep_data');
+  
+  await sleepData.add({
+    'start_time': session.startTime,
+    'end_time': session.endTime,
+    'duration': session.duration,
+    'quality_score': calculateSleepQuality(session),
+  });
+}
